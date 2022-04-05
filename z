@@ -1,0 +1,87 @@
+#!/usr/local/bin/perl -w
+
+use English;
+use Patch;
+use Zound;
+
+#$Zound::verbose = 1;
+
+Zound::grab_ct_params( \@ARGV );
+
+$patchname = shift @ARGV;
+
+@options = @ARGV;
+
+&read_zrc( \@options );
+
+$rawpatchname = $patchname;
+$rawpatchname =~ s/\.p$//;
+$patchname = $rawpatchname . ".p";
+$cfilename = $rawpatchname . ".gen";
+
+$patch = Patch->read( $patchname );
+$patch->add_options( \@options );
+$s = $patch->gen();
+
+(open OUTFILE, ">$cfilename" ) || die "Can't open $cfilename";
+
+print OUTFILE $s;
+close OUTFILE;
+
+$libs = Zound::gen_lib_list;
+
+$libs .= "ioasync.o profile.o ";
+
+@incdirs = qw( /usr/local/linuxthreads /usr/lib/oss/include );
+#$incs = "-I/usr/lib/oss/include";
+$incdirs = join( " ", map { "-I$_" } @incdirs );
+
+@libdirs = qw( /usr/local/linuxthreads );
+$libdirs = join( " ", map { "-L$_" } @libdirs );
+
+$command = "gcc $incdirs $libdirs -static -D_REENTRANT -g -o $rawpatchname -x c $cfilename -x none $libs z_param.o z_time.o -lpthread -lm >& .errs.txt";
+
+#print "$command\n";
+
+$ret = system( $command );
+
+&report_errors;
+
+if ($ret==0) {
+  #print "Ok.\n";
+} else {
+  print "Error: $a\n";
+}
+
+sub read_zrc {
+  my $options = shift;
+
+  if (-e ".zrc") {
+    open (ZRC,".zrc") || print "Can't open .zrc\n";
+    while (<ZRC>) {
+      next if (/^\s*#/);
+      chop;
+      push @$options, $_;
+    }
+    close ZRC;
+  }
+}
+
+sub report_errors {
+  if (-e "ignoreerrors.txt" && open( IE, "ignoreerrors.txt" )) {
+    while (<IE>) {
+      $ie{$_} = $_;
+    }
+    close IE;
+  }
+
+  $first = 1;
+  open( ERRS, ".errs.txt" ) || warn "Can't open errors file.";
+  while (<ERRS>) {
+    next if ($ie{$_});
+    print "Compile errors:\n" if ($first);
+    print;
+    $first = 0;
+  }
+  close ERRS;
+}
